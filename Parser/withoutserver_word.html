@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Profile Parser</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <h2>Paste Raw Profile Text</h2>
+  <textarea id="inputText" rows="20" cols="100"></textarea><br><br>
+  <button onclick="generateExcel()">Download Excel</button>
+
+  <script>
+    function isNameLine(line) {
+      return /^[A-Z][a-zA-Z]+(\s[A-Z][a-zA-Z]+)+$/.test(line.trim());
+    }
+
+    function splitProfiles(rawText) {
+      const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      const profiles = [];
+      let currentProfileLines = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (isNameLine(line) && i + 1 < lines.length && lines[i + 1].toLowerCase().includes('connection')) {
+          if (currentProfileLines.length > 0) {
+            profiles.push(currentProfileLines.join('\n'));
+            currentProfileLines = [];
+          }
+        }
+        currentProfileLines.push(line);
+      }
+
+      if (currentProfileLines.length > 0) {
+        profiles.push(currentProfileLines.join('\n'));
+      }
+      return profiles;
+    }
+
+    function extractSkillsFromHeadline(headline) {
+      return headline.includes('|') ? headline.split('|').map(s => s.trim()).filter(Boolean) : [];
+    }
+
+    function detectDepartment(designation) {
+      const lower = designation.toLowerCase();
+      if (lower.includes("sales")) return "Sales";
+      if (lower.includes("marketing")) return "Marketing";
+      if (lower.includes("engineering")) return "Engineering";
+      if (lower.includes("account") || lower.includes("finance")) return "Finance";
+      return "N/A";
+    }
+
+    function parseProfileBlock(text) {
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const result = {
+        name: "N/A", connection: "N/A", headline: "N/A", currentLocation: "N/A",
+        industry: "N/A", experiences: [], currentCompany: "N/A", designation: "N/A",
+        department: "N/A", education: [], email: "N/A", keySkills: [],
+        preferredLocation: "N/A", ctc: "N/A", level: "N/A", remarks: "N/A"
+      };
+
+      let idx = 0;
+      result.name = lines[idx++] || "N/A";
+      if (idx < lines.length && lines[idx].toLowerCase().includes('connection')) result.connection = lines[idx++];
+      if (idx < lines.length) {
+        result.headline = lines[idx++];
+        result.keySkills = extractSkillsFromHeadline(result.headline);
+      }
+
+      for (; idx < lines.length; idx++) {
+        const line = lines[idx];
+        if (line.includes(',') && result.currentLocation === "N/A") result.currentLocation = line;
+        if (line.startsWith('·') && result.industry === "N/A") result.industry = line.replace('·', '').trim();
+        if (result.currentLocation !== "N/A" && result.industry !== "N/A") break;
+      }
+
+      const expStart = lines.findIndex(l => l.toLowerCase().includes('experienceprofile experience'));
+      if (expStart !== -1) {
+        for (let i = expStart + 1; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.toLowerCase().includes('educationprofile education')) break;
+          if (line.toLowerCase().includes('enhanced by resume') || line.toLowerCase().includes('show all')) continue;
+
+          const match = line.match(/^\d+\.\s*(.*?)\s+at\s+(.*?)\s+[·\-]\s+(.*)$/i);
+          if (match) {
+            const role = match[1].trim();
+            const company = match[2].trim();
+            const duration = match[3].trim();
+            result.experiences.push({ role, company, duration });
+          } else if (line) {
+            result.experiences.push({ raw: line });
+          }
+        }
+        const topExp = result.experiences.find(e => e.company);
+        if (topExp) {
+          result.currentCompany = topExp.company;
+          result.designation = topExp.role;
+          result.department = detectDepartment(topExp.role);
+        }
+      }
+
+      const eduStart = lines.findIndex(l => l.toLowerCase().includes('educationprofile education'));
+      if (eduStart !== -1) {
+        for (let i = eduStart + 1; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.toLowerCase().includes('interest')) break;
+          const match = line.match(/^\d+\.\s*(.+?)[·\-]\s*(.+)$/);
+          if (match) {
+            result.education.push({ course: match[1].trim(), duration: match[2].trim() });
+          } else if (line) {
+            result.education.push({ raw: line });
+          }
+        }
+      }
+
+      return result;
+    }
+
+    function parseProfiles(rawText) {
+      const profiles = splitProfiles(rawText);
+      return profiles.map(profileText => parseProfileBlock(profileText));
+    }
+
+    function generateExcel() {
+      const rawText = document.getElementById('inputText').value;
+      const parsed = parseProfiles(rawText);
+
+      const data = parsed.map(p => ({
+        Name: p.name,
+        Connection: p.connection,
+        Headline: p.headline,
+        "Current Location": p.currentLocation,
+        Industry: p.industry,
+        "Current Company": p.currentCompany,
+        Designation: p.designation,
+        Department: p.department,
+        Email: p.email,
+        Skills: p.keySkills.join(', '),
+        "Preferred Location": p.preferredLocation,
+        CTC: p.ctc,
+        Level: p.level,
+        Remarks: p.remarks,
+        "Experience (Formatted)": p.experiences.map(e => e.role && e.company ? `${e.role} at ${e.company} (${e.duration})` : e.raw || '').join(' | '),
+        "Education (Formatted)": p.education.map(e => e.course ? `${e.course} (${e.duration})` : e.raw || '').join(' | ')
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Parsed Profiles');
+      XLSX.writeFile(workbook, 'parsed_profiles.xlsx');
+    }
+  </script>
+</body>
+</html>

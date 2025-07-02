@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>✨ Attendance Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 40px;
+      color: #1f2937;
+    }
+    h2 {
+      text-align: center;
+      color: #1e40af;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 40px;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      padding: 30px;
+    }
+    label {
+      font-weight: 600;
+      display: block;
+      margin-top: 20px;
+      color: #374151;
+    }
+    input[type="file"], input[type="date"], button {
+      padding: 12px 14px;
+      width: 100%;
+      max-width: 100%;
+      margin-top: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 15px;
+      background-color: #f9fafb;
+      transition: border 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
+    button {
+      background-color: #2563eb;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: center;
+      border: none;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    table {
+      width: 100%;
+      margin-top: 30px;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+    th, td {
+      padding: 14px 16px;
+      text-align: center;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+      background-color: #f1f5f9;
+      font-weight: 700;
+      color: #1e3a8a;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    tr:nth-child(even) td {
+      background-color: #f9fafb;
+    }
+    .tick {
+      color: #22c55e;
+      font-size: 18px;
+    }
+    @media (max-width: 768px) {
+      body {
+        padding: 20px;
+      }
+      .container {
+        padding: 20px;
+      }
+      table {
+        font-size: 13px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2><i class="fas fa-calendar-check"></i>Dashboard</h2>
+
+  <label><i class="fas fa-file-import"></i> Upload Master Sheet:</label>
+  <input type="file" id="masterFile" accept=".xlsx,.csv">
+  <button onclick="parseMaster()"><i class="fas fa-play"></i> Parse Master Sheet</button>
+
+  <label><i class="fas fa-file-upload"></i> Upload Today’s Sheet:</label>
+  <input type="file" id="dailyFile" accept=".xlsx,.csv">
+  
+
+  <label><i class="fas fa-calendar-day"></i> Select Date:</label>
+  <input type="date" id="attendanceDate">
+
+  <button onclick="parseToday()"><i class="fas fa-check-double"></i> Mark</button>
+
+  <button onclick="downloadExcel()"><i class="fas fa-download"></i> Download Final Sheet</button>
+
+  <div id="tableContainer"></div>
+</div>
+
+<script>
+let masterData = [], finalDate = "", dailyNames = [];
+
+function formatExcelDate(excelDate) {
+  const d = new Date((excelDate - 25569) * 86400 * 1000);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+function readExcel(file, callback) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    const headers = raw[0].map(h => {
+      if (!h) return "";
+      return typeof h === 'number' ? formatExcelDate(h) : h.toString().trim();
+    });
+
+    const dataRows = raw.slice(1).map(row => {
+      let obj = {};
+      headers.forEach((h, i) => {
+        if (h) obj[h] = row[i];
+      });
+      return obj;
+    });
+
+    callback(dataRows);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseMaster() {
+  const file = document.getElementById('masterFile').files[0];
+  if (!file) return alert("Please upload the Master Sheet.");
+  readExcel(file, (data) => {
+    masterData = data;
+    alert("✅ Master data loaded!");
+    renderTable();
+  });
+}
+
+function parseToday() {
+  const file = document.getElementById('dailyFile').files[0];
+  const dateInput = document.getElementById("attendanceDate").value;
+  if (!file || !dateInput) return alert("Please upload today's sheet and select a date.");
+
+  const [yyyy, mm, dd] = dateInput.split("-");
+  finalDate = `${dd}-${mm}-${yyyy}`;
+
+  readExcel(file, (todayData) => {
+    const todayNames = todayData.map(row => row.Name?.toString().trim());
+    const masterNames = masterData.map(row => row.Name?.toString().trim());
+
+    masterData.forEach(row => {
+      const name = row.Name?.toString().trim();
+      if (!row[finalDate]) row[finalDate] = '';
+      if (todayNames.includes(name)) {
+        row[finalDate] = "✓";
+      }
+    });
+
+    todayData.forEach(todayRow => {
+      const name = todayRow.Name?.toString().trim();
+      if (!masterNames.includes(name)) {
+        const newRow = {
+          Name: name || "",
+          Designation: todayRow.Designation || "",
+          Location: todayRow.Location || "",
+          "Company name": todayRow["Company name"] || ""
+        };
+        const allKeys = masterData.length > 0 ? Object.keys(masterData[0]) : [];
+        const allDates = allKeys.filter(k => /^\d{2}-\d{2}-\d{4}$/.test(k));
+        allDates.forEach(date => newRow[date] = '');
+        newRow[finalDate] = "✓";
+        masterData.push(newRow);
+      }
+    });
+
+    renderTable();
+  });
+}
+
+function renderTable() {
+  if (masterData.length === 0) return;
+
+  masterData.sort((a, b) => {
+    const nameA = (a.Name || "").toLowerCase();
+    const nameB = (b.Name || "").toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
+
+  const allKeys = Object.keys(masterData[0] || {});
+  const allDates = allKeys.filter(k => /^\d{2}-\d{2}-\d{4}$/.test(k));
+
+  let html = '<table><thead><tr>';
+  html += '<th>Name</th><th>Designation</th><th>Location</th><th>Company name</th>';
+  allDates.forEach(date => html += `<th>${date}</th>`);
+  html += '</tr></thead><tbody>';
+
+  masterData.forEach(row => {
+    html += `<tr>
+      <td>${row.Name || ''}</td>
+      <td>${row.Designation || ''}</td>
+      <td>${row.Location || ''}</td>
+      <td>${row["Company name"] || ''}</td>`;
+    allDates.forEach(date => {
+      const tick = row[date] === '✓' ? '<span class="tick">✓</span>' : '';
+      html += `<td>${tick}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  document.getElementById("tableContainer").innerHTML = html;
+}
+
+function downloadExcel() {
+  if (masterData.length === 0) return alert("No data to export!");
+
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2, '0');
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const yyyy = today.getFullYear();
+  const fileName = `MasterSheet-${dd}-${mm}-${yyyy}.xlsx`;
+
+  const ws = XLSX.utils.json_to_sheet(masterData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+  XLSX.writeFile(wb, fileName);
+}
+</script>
+
+</body>
+</html>

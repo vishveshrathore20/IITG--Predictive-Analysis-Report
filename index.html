@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>✨ Attendance Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 40px;
+      color: #1f2937;
+    }
+    h2 {
+      text-align: center;
+      color: #1e40af;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 30px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: auto;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      padding: 30px;
+    }
+    label {
+      font-weight: 600;
+      display: block;
+      margin-top: 20px;
+      color: #374151;
+    }
+    input, select, button {
+      padding: 12px;
+      width: 100%;
+      margin-top: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 15px;
+      background-color: #f9fafb;
+    }
+    button {
+      background-color: #2563eb;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: center;
+      border: none;
+    }
+    button:hover { background-color: #1d4ed8; }
+    table {
+      width: 100%;
+      margin-top: 30px;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+    th, td {
+      padding: 14px;
+      text-align: center;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+      background-color: #f1f5f9;
+      font-weight: 700;
+      color: #1e3a8a;
+      position: sticky;
+      top: 0;
+    }
+    .tick {
+      color: #22c55e;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2><i class="fas fa-calendar-check"></i> Attendance Dashboard</h2>
+
+  <!-- Add Company -->
+  <label><i class="fas fa-plus-circle"></i> Add New Company:</label>
+  <input type="text" id="newCompanyInput" placeholder="Enter company name">
+  <button onclick="addCompany()"><i class="fas fa-plus"></i> Save Company</button>
+
+  <!-- Company Dropdown -->
+  <label><i class="fas fa-building"></i> Select Company:</label>
+  <select id="companySelect" onchange="fetchCompanyData()"></select>
+
+  <!-- Upload Today -->
+  <label><i class="fas fa-file-upload"></i> Upload Today’s Attendance Sheet:</label>
+  <input type="file" id="dailyFile" accept=".xlsx,.csv">
+
+  <label><i class="fas fa-calendar-day"></i> Select Date:</label>
+  <input type="date" id="attendanceDate">
+
+  <button onclick="uploadAttendanceToServer()"><i class="fas fa-cloud-upload-alt"></i> Upload & Save Attendance</button>
+  <button onclick="downloadExcel()"><i class="fas fa-download"></i> Download Attendance Report</button>
+
+  <div id="tableContainer"></div>
+</div>
+
+<script>
+const API_URL = 'http://localhost:3000'; // Change if hosted elsewhere
+let masterData = [], finalDate = "", selectedCompany = "";
+
+// Load all companies
+async function loadCompanies() {
+  const res = await fetch(`${API_URL}/api/company`);
+  const companies = await res.json();
+  const dropdown = document.getElementById('companySelect');
+  dropdown.innerHTML = '<option value="">-- Select Company --</option>';
+  companies.forEach(c => {
+    dropdown.innerHTML += `<option value="${c.name}">${c.name}</option>`;
+  });
+}
+
+// Add new company
+async function addCompany() {
+  const name = document.getElementById('newCompanyInput').value.trim();
+  if (!name) return alert("Please enter a company name.");
+  try {
+    const res = await fetch(`${API_URL}/api/company`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const result = await res.json();
+    alert(result.message || "Company saved!");
+    document.getElementById('newCompanyInput').value = '';
+    loadCompanies(); // Refresh dropdown
+  } catch (err) {
+    alert("Error saving company");
+  }
+}
+
+// Fetch selected company data
+async function fetchCompanyData() {
+  selectedCompany = document.getElementById('companySelect').value;
+  if (!selectedCompany) return;
+
+  const res = await fetch(`${API_URL}/api/company/${selectedCompany}`);
+  const data = await res.json();
+  masterData = data.employees;
+
+  // Mark attendance from DB
+  data.attendance.forEach(entry => {
+    entry.presentNames.forEach(name => {
+      const emp = masterData.find(e => e.name === name);
+      if (emp) emp[entry.date] = '✓';
+    });
+  });
+
+  renderTable();
+}
+
+// Read uploaded Excel sheet
+function readExcel(file, callback) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    const headers = raw[0].map(h => h?.toString().trim());
+    const dataRows = raw.slice(1).map(row => {
+      let obj = {};
+      headers.forEach((h, i) => { if (h) obj[h] = row[i]; });
+      return obj;
+    });
+    callback(dataRows);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Upload today's attendance to server
+async function uploadAttendanceToServer() {
+  const file = document.getElementById('dailyFile').files[0];
+  const dateInput = document.getElementById("attendanceDate").value;
+  if (!file || !dateInput || !selectedCompany)
+    return alert("Please select a company, date and upload the attendance file.");
+
+  const [yyyy, mm, dd] = dateInput.split("-");
+  finalDate = `${dd}-${mm}-${yyyy}`;
+
+  readExcel(file, async (todayData) => {
+    const todaySheet = todayData.map(row => ({
+      name: row.Name?.trim() || "",
+      designation: row.Designation || "",
+      location: row.Location || ""
+    })).filter(e => e.name);
+
+    const res = await fetch(`${API_URL}/api/company/attendance/${selectedCompany}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: finalDate, todaySheet })
+    });
+
+    const result = await res.json();
+    alert(result.message || "Attendance uploaded!");
+    fetchCompanyData(); // Refresh table
+  });
+}
+
+// Render attendance table
+function renderTable() {
+  if (masterData.length === 0) return;
+
+  const allDates = new Set();
+  masterData.forEach(row => {
+    Object.keys(row).forEach(key => {
+      if (/^\d{2}-\d{2}-\d{4}$/.test(key)) allDates.add(key);
+    });
+  });
+  const sortedDates = Array.from(allDates).sort();
+
+  let html = '<table><thead><tr>';
+  html += '<th>Name</th><th>Designation</th><th>Location</th>';
+  sortedDates.forEach(date => html += `<th>${date}</th>`);
+  html += '</tr></thead><tbody>';
+
+  masterData.forEach(row => {
+    html += `<tr>
+      <td>${row.name || row.Name || ''}</td>
+      <td>${row.designation || ''}</td>
+      <td>${row.location || ''}</td>`;
+    sortedDates.forEach(date => {
+      const tick = row[date] === '✓' ? '<span class="tick">✓</span>' : '';
+      html += `<td>${tick}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  document.getElementById("tableContainer").innerHTML = html;
+}
+
+// Download as Excel
+function downloadExcel() {
+  if (masterData.length === 0) return alert("No data to download");
+
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2, '0');
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const yyyy = today.getFullYear();
+  const fileName = `Attendance-${selectedCompany}-${dd}-${mm}-${yyyy}.xlsx`;
+
+  const rows = masterData.map(emp => {
+    let obj = {
+      Name: emp.name || emp.Name,
+      Designation: emp.designation,
+      Location: emp.location
+    };
+    Object.keys(emp).forEach(k => {
+      if (/^\d{2}-\d{2}-\d{4}$/.test(k)) {
+        obj[k] = emp[k];
+      }
+    });
+    return obj;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+  XLSX.writeFile(wb, fileName);
+}
+
+// Load companies on startup
+loadCompanies();
+</script>
+
+</body>
+</html>

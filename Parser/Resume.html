@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Resume Text Parser</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    textarea { width: 100%; height: 300px; margin-bottom: 10px; }
+    button { padding: 10px 20px; margin-right: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; display: none; }
+    table, th, td { border: 1px solid #ccc; }
+    th, td { padding: 8px; vertical-align: top; text-align: left; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+  <h2>Resume Text Parser</h2>
+  <textarea id="resumeText" placeholder="Paste resume text here..."></textarea><br />
+  <button id="parseResumeBtn">Parse Resume</button>
+
+  <table id="resumeTable">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Mobile</th>
+        <th>Email</th>
+        <th>Experience</th>
+        <th>Education</th>
+        <th>Skills</th>
+        <th>Company</th>
+        <th>Designation</th>
+        <th>Location</th>
+      </tr>
+    </thead>
+    <tbody id="resumeBody"></tbody>
+  </table>
+
+  <script>
+    function extractResumeDetails(text) {
+      const nameMatch = text.match(/^(?!Resume)([A-Z][a-z.'-]+\s+){1,3}[A-Z][a-z.'-]+/m);
+      const mobileMatch = text.match(/(\+91[\-\s]?)?\b\d{10}\b/);
+      const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}/);
+      const expMatch = text.match(/(\d+)\s*(?:years|yrs|y)\s*(\d*)\s*(?:months|m)?/i);
+      const educationMatch = text.match(/(B\.Tech|B\.E|M\.Tech|MBA|MCA|BCA|BSc|MSc).+?(?=\n|$)/i);
+      const skillsMatch = text.match(/Skills\s*[:\-]?\s*(.*)/i);
+      const companyMatch = text.match(/(?:at|with)\s+([A-Z][a-zA-Z0-9 &.]+)/);
+      const designationMatch = text.match(/(?:working as|designation[:\-]?)\s*([A-Za-z \/-]{3,50})/i);
+      const locationMatch = text.match(/Location\s*[:\-]?\s*([A-Za-z ,]+)/i);
+
+      return {
+        name: nameMatch ? nameMatch[0].trim() : '',
+        mobile: mobileMatch ? mobileMatch[0] : '',
+        email: emailMatch ? emailMatch[0] : '',
+        experience: expMatch ? (expMatch[1] + 'y ' + (expMatch[2] || '0') + 'm') : '',
+        education: educationMatch ? educationMatch[0] : '',
+        skills: skillsMatch ? skillsMatch[1] : '',
+        company: companyMatch ? companyMatch[1] : '',
+        designation: designationMatch ? designationMatch[1] : '',
+        location: locationMatch ? locationMatch[1] : ''
+      };
+    }
+
+    $('#parseResumeBtn').click(function () {
+      const text = $('#resumeText').val();
+      const result = extractResumeDetails(text);
+
+      $('#resumeBody').html(`
+        <tr>
+          <td>${result.name}</td>
+          <td>${result.mobile}</td>
+          <td>${result.email}</td>
+          <td>${result.experience}</td>
+          <td>${result.education}</td>
+          <td>${result.skills}</td>
+          <td>${result.company}</td>
+          <td>${result.designation}</td>
+          <td>${result.location}</td>
+        </tr>
+      `);
+      $('#resumeTable').show();
+    });
+  </script>
+
+</body>
+</html>

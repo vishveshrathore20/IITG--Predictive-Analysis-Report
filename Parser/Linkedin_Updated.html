@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LinkedIn Profile Parser</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    textarea { width: 100%; height: 300px; margin-bottom: 10px; }
+    button { padding: 10px 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; display: none; }
+    table, th, td { border: 1px solid #ccc; }
+    th, td { padding: 8px; vertical-align: top; text-align: left; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+  <h2>LinkedIn Recruiter Data Parser</h2>
+  <textarea id="rawData" placeholder="Paste LinkedIn Recruiter data here..."></textarea><br />
+  <button id="parseBtn">Parse</button>
+
+  <table id="outputTable">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Current Company</th>
+        <th>Current Designation</th>
+        <th>Experience</th>
+        <th>Education</th>
+        <th>Skills</th>
+        <th>CTC</th>
+      </tr>
+    </thead>
+    <tbody id="outputBody"></tbody>
+  </table>
+
+  <script>
+    function sanitize(str) {
+      return $('<div>').text(str).html(); // encode HTML entities
+    }
+
+    function parseCandidateBlock(text) {
+      const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+
+      const name = lines[0];
+      const connectionMatch = lines[1]?.match(/(\d+(?:st|nd|rd|th)? degree connection|Open to work|.*connection)/i);
+      const connection = connectionMatch ? connectionMatch[0] : '';
+
+      let title = '', location = '', education = [], experience = [], current_company = '', current_designation = '', ctc = '', skills = [];
+
+      // Parse title and location
+      for (let i = 2; i < lines.length; i++) {
+        if (lines[i].includes('·')) {
+          const parts = lines[i].split('·').map(s => s.trim());
+          title = parts[0];
+          for (let j = parts.length - 1; j > 0; j--) {
+            const part = parts[j];
+            if (!/\d/.test(part) && !/(present|current|–|to|from|year)/i.test(part)) {
+              location = part;
+              break;
+            }
+          }
+          break;
+        }
+      }
+
+      // Parse Experience
+      const experienceStart = lines.findIndex(l => l.toLowerCase().includes('experience'));
+      if (experienceStart !== -1) {
+        let i = experienceStart + 1;
+        while (i < lines.length && !lines[i].toLowerCase().includes('education')) {
+          const role = lines[i];
+          const companyLine = lines[i + 1] || '';
+          if (!role || !companyLine || companyLine.toLowerCase().includes('education')) break;
+
+          const match = companyLine.match(/at (.*?) ·/);
+          const company = match ? match[1] : '';
+          const date = companyLine.includes('·') ? companyLine.split('·').pop().trim() : '';
+
+          if (role && company) {
+            experience.push({ role, company, date });
+          }
+
+          i += 2;
+        }
+
+        if (experience.length > 0) {
+          current_designation = experience[0]?.role || '';
+          current_company = experience[0]?.company || '';
+        }
+      }
+
+      // Parse Education
+      const educationStart = lines.findIndex(l => l.toLowerCase().includes('education'));
+      if (educationStart !== -1) {
+        let i = educationStart + 1;
+        while (i < lines.length && !lines[i].toLowerCase().includes('save to project') && !lines[i].toLowerCase().includes('skills')) {
+          if (lines[i]) education.push(lines[i]);
+          i++;
+        }
+      }
+
+      // Parse Skills
+      const skillsStart = lines.findIndex(l => l.toLowerCase().includes('skills') || l.toLowerCase().includes('top skills'));
+      if (skillsStart !== -1) {
+        let i = skillsStart + 1;
+        while (i < lines.length && lines[i] && !lines[i].toLowerCase().includes('save to project')) {
+          if (/^[A-Za-z].*/.test(lines[i])) skills.push(lines[i]);
+          i++;
+        }
+      }
+
+      // Parse CTC
+      const ctcMatch = text.match(/(?:₹|INR)?\s?[\d,.]+(?:\s?LPA)?/i);
+      ctc = ctcMatch ? ctcMatch[0] : '';
+
+      return {
+        name: sanitize(name),
+        connection: sanitize(connection),
+        title: sanitize(title),
+        location: sanitize(location),
+        current_designation: sanitize(current_designation),
+        current_company: sanitize(current_company),
+        ctc: sanitize(ctc),
+        experiences: experience,
+        education: education.map(sanitize),
+        skills: skills.map(sanitize)
+      };
+    }
+
+    $('#parseBtn').click(function () {
+      const raw = $('#rawData').val();
+      const peopleBlocks = raw.split(/Select\s+/).slice(1); // skip first chunk
+
+      const results = peopleBlocks
+        .map(parseCandidateBlock)
+        .filter(c => c.name && c.name.length < 100 && !c.name.toLowerCase().includes('profile'));
+
+      const $outputTable = $('#outputTable');
+      const $outputBody = $('#outputBody');
+      $outputBody.empty();
+
+      results.forEach(profile => {
+        const expFormatted = profile.experiences.map(exp =>
+          `${exp.role} at ${exp.company} (${exp.date || 'Date N/A'})`
+        ).join('\n');
+
+        const eduFormatted = profile.education.join('\n');
+        const skillsFormatted = profile.skills.join(', ');
+
+        $outputBody.append(`
+          <tr>
+            <td>${profile.name}</td>
+            <td>${profile.current_company}</td>
+            <td>${profile.current_designation}</td>
+            <td>${expFormatted}</td>
+            <td>${eduFormatted}</td>
+            <td>${skillsFormatted}</td>
+            <td>N/A</td>
+          </tr>
+        `);
+      });
+
+      if (results.length > 0) {
+        $outputTable.show();
+      } else {
+        $outputTable.hide();
+      }
+    });
+  </script>
+
+</body>
+</html>

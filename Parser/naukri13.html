@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Naukri Profile Parser</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    textarea { width: 100%; height: 300px; margin-bottom: 10px; }
+    button { padding: 10px 20px; margin-right: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; display: none; }
+    table, th, td { border: 1px solid #ccc; }
+    th, td { padding: 8px; vertical-align: top; text-align: left; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+  <h2>Naukri Profile Parser</h2>
+  <textarea id="rawData" placeholder="Paste Naukri recruiter data here..."></textarea><br />
+  <button id="parseBtn">Parse</button>
+  <button id="exportBtn">Export to Excel</button>
+
+  <table id="outputTable">
+    <thead>
+      <tr>
+        <th>S.No.</th>
+        <th>Name</th>
+        <th>Total Experience</th>
+        <th>CTC</th>
+        <th>Current Location</th>
+        <th>Preferred Location</th>   
+        <th>Current Company</th>
+        <th>Industry type</th>
+        <th>Designation</th>
+        <th>Dept</th>
+        <th>level</th>
+        <th>Education</th>
+        <th>Mobile</th>
+        <th>Email</th>
+        <th>Key Skills</th>
+        <th>Remarks</th>
+      </tr>
+    </thead>
+    <tbody id="outputBody"></tbody>
+  </table>
+
+<script>
+  let profileCount = 0;
+
+  function sanitize(str) {
+    return $('<div>').text(str).html();
+  }
+
+  function parseNaukriProfiles(raw) {
+    const blocks = raw.split(/\n(?=\d{10}\n|cv\d+@|View phone number|Call candidate)/gi);
+    const profiles = [];
+
+    blocks.forEach(block => {
+      const lines = block.trim().split('\n').map(line => line.trim()).filter(line => line);
+      if (lines.length < 5) return;
+
+      let name = '';
+for (let i = 0; i < lines.length; i++) {
+  if (/^\d{1,2}y\s+\d{1,2}m$/.test(lines[i]) || /^Fresher$/i.test(lines[i])) {
+    // Look back max 5 lines to find a valid name
+    for (let j = i - 1; j >= i - 5 && j >= 0; j--) {
+      const candidate = lines[j].trim();
+      if (
+        /^[A-Z][a-zA-Z .'-]{2,}$/.test(candidate) && // Capitalized, human-like name
+        candidate.length >= 3 &&
+        !/\b(New|Fresher|Active|Current|Previous|Education|Pref\.|Key skills|Modified|Profile|Call|Save|Comment)\b/i.test(candidate)
+      ) {
+        name = candidate;
+        break;
+      }
+    }
+    break;
+  }
+}
+
+      const expMatch = block.match(/(\d+y \d+m)/) || block.match(/Fresher/i);
+      const ctcMatch = block.match(/₹\s?[\d.]+(?:\s?Lacs)?/);
+      const locationMatch = block.match(/\n([A-Za-z /]+)\nCurrent/);
+      const currMatch = block.match(/Current\s*\n([^\n]+) at ([^\n]+)/);
+      const eduMatch = block.match(/Education\n([^\n]+)\n/);
+      const prefMatch = block.match(/Pref.*location[s]?\n([^\n]+)/i);
+      const skillsMatch = block.match(/Key skills\n((?:.*\|\s*)+)/);
+      const mobileMatch = block.match(/(?:^|\D)(\d{10})(?=\D)/);
+      const mobile = mobileMatch ? mobileMatch[1] : 'N/A';
+
+      const exp = expMatch ? (expMatch[1] || "Fresher") : 'N/A';
+      const ctc = ctcMatch ? ctcMatch[0] : 'N/A';
+      const loc = locationMatch ? locationMatch[1].trim() : 'India';
+      const designation = currMatch ? currMatch[1] : 'N/A';
+      const company = currMatch ? currMatch[2] : 'N/A';
+      const edu = eduMatch ? eduMatch[1] : 'N/A';
+      const prefLoc = prefMatch ? prefMatch[1].replace(/,\s+/g, ', ') : 'N/A';
+      const skills = skillsMatch ? skillsMatch[1].replace(/\|\s*/g, ', ').trim() : 'N/A';
+      
+
+      profiles.push({
+        name: sanitize(name || 'N/A'),
+        experience: sanitize(exp),
+        ctc: sanitize(ctc),
+        location: sanitize(loc),
+        current_company: sanitize(company),
+        designation: sanitize(designation),
+        education: sanitize(edu),
+        preferred_location: sanitize(prefLoc),
+        skills: sanitize(skills),
+        mobile: sanitize(mobile)
+      });
+    });
+
+    return profiles;
+  }
+
+  $('#parseBtn').click(function () {
+  const raw = $('#rawData').val();
+  const profiles = parseNaukriProfiles(raw);
+  const $outputTable = $('#outputTable');
+  const $outputBody = $('#outputBody');
+
+  profiles.forEach(p => {
+    profileCount++;
+    $outputBody.append(`
+      <tr>
+        <td>${profileCount}</td>
+        <td>${p.name}</td>
+        <td>${p.experience}</td>
+        <td>${p.ctc}</td>
+        <td>${p.location}</td>
+        <td>${p.preferred_location}</td>
+        <td>${p.current_company}</td>
+        <td>-</td>
+        <td>${p.designation}</td>
+        <td>-</td>
+        <td>-</td>
+        <td>${p.education}</td>
+        <td>${p.mobile}</td>
+        <td>-</td>
+        <td>${p.skills}</td>
+        <td></td>
+      </tr>
+    `);
+  });
+
+  if (profiles.length > 0) {
+    $outputTable.show();
+    $('#rawData').val('');
+  }
+  });
+
+  $('#exportBtn').click(function () {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(document.getElementById('outputTable'));
+    XLSX.utils.book_append_sheet(wb, ws, "Naukri Profiles");
+    XLSX.writeFile(wb, "Naukri_Parsed_Profiles.xlsx");
+  });
+
+</script>
+</body>
+</html>
