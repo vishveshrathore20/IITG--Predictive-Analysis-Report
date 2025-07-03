@@ -2,9 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>✨ Attendance Dashboard</title>
+  <title>✨ Predictive Analysis </title>
+
+  <!-- Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
   <style>
     * { box-sizing: border-box; }
     body {
@@ -82,43 +87,50 @@
       color: #22c55e;
       font-size: 18px;
     }
+    #selectedCompanyDisplay {
+      font-weight: 600;
+      margin-top: 10px;
+      color: #1f2937;
+    }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h2><i class="fas fa-calendar-check"></i> Attendance Dashboard</h2>
+  <h2><i class="fas fa-calendar-check"></i> Predictive Analysis Dashboard</h2>
 
-  <!-- Add Company -->
   <label><i class="fas fa-plus-circle"></i> Add New Company:</label>
   <input type="text" id="newCompanyInput" placeholder="Enter company name">
   <button onclick="addCompany()"><i class="fas fa-plus"></i> Save Company</button>
 
-  <!-- Company Dropdown -->
   <label><i class="fas fa-building"></i> Select Company:</label>
   <select id="companySelect" onchange="fetchCompanyData()"></select>
+  <div id="selectedCompanyDisplay"></div>
 
-  <!-- Upload Today -->
-  <label><i class="fas fa-file-upload"></i> Upload Today’s Attendance Sheet:</label>
+  <label><i class="fas fa-file-upload"></i> Upload Today’s Report Sheet:</label>
   <input type="file" id="dailyFile" accept=".xlsx,.csv">
 
   <label><i class="fas fa-calendar-day"></i> Select Date:</label>
   <input type="date" id="attendanceDate">
 
-  <button onclick="uploadAttendanceToServer()"><i class="fas fa-cloud-upload-alt"></i> Upload & Save Attendance</button>
-  <button onclick="downloadExcel()"><i class="fas fa-download"></i> Download Attendance Report</button>
+  <button onclick="uploadAttendanceToServer()"><i class="fas fa-cloud-upload-alt"></i> Upload & Save</button>
+  <button onclick="downloadExcel()"><i class="fas fa-download"></i> Download Excel</button>
+  <button onclick="downloadPDF()"><i class="fas fa-file-pdf"></i> Download PDF</button>
 
   <div id="tableContainer"></div>
 </div>
 
 <script>
-const API_URL = 'https://iitg-predictive-analysis-report-1.onrender.com'; // Change if hosted elsewhere
+const API_URL = 'https://iitg-predictive-analysis-report-1.onrender.com'; 
 let masterData = [], finalDate = "", selectedCompany = "";
 
-// Load all companies
+// ✅ Load companies in ascending order
 async function loadCompanies() {
   const res = await fetch(`${API_URL}/api/company`);
   const companies = await res.json();
+
+  companies.sort((a, b) => a.name.localeCompare(b.name)); // A–Z sort
+
   const dropdown = document.getElementById('companySelect');
   dropdown.innerHTML = '<option value="">-- Select Company --</option>';
   companies.forEach(c => {
@@ -126,7 +138,7 @@ async function loadCompanies() {
   });
 }
 
-// Add new company
+// ✅ Add new company
 async function addCompany() {
   const name = document.getElementById('newCompanyInput').value.trim();
   if (!name) return alert("Please enter a company name.");
@@ -139,22 +151,22 @@ async function addCompany() {
     const result = await res.json();
     alert(result.message || "Company saved!");
     document.getElementById('newCompanyInput').value = '';
-    loadCompanies(); // Refresh dropdown
+    loadCompanies(); 
   } catch (err) {
     alert("Error saving company");
   }
 }
 
-// Fetch selected company data
+// ✅ Fetch and render company data
 async function fetchCompanyData() {
   selectedCompany = document.getElementById('companySelect').value;
   if (!selectedCompany) return;
+  document.getElementById("selectedCompanyDisplay").textContent = `Company: ${selectedCompany}`;
 
   const res = await fetch(`${API_URL}/api/company/${selectedCompany}`);
   const data = await res.json();
   masterData = data.employees;
 
-  // Mark attendance from DB
   data.attendance.forEach(entry => {
     entry.presentNames.forEach(name => {
       const emp = masterData.find(e => e.name === name);
@@ -165,27 +177,7 @@ async function fetchCompanyData() {
   renderTable();
 }
 
-// Read uploaded Excel sheet
-function readExcel(file, callback) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: 'array' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-    const headers = raw[0].map(h => h?.toString().trim());
-    const dataRows = raw.slice(1).map(row => {
-      let obj = {};
-      headers.forEach((h, i) => { if (h) obj[h] = row[i]; });
-      return obj;
-    });
-    callback(dataRows);
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-// Upload today's attendance to server
+// ✅ Upload attendance file
 async function uploadAttendanceToServer() {
   const file = document.getElementById('dailyFile').files[0];
   const dateInput = document.getElementById("attendanceDate").value;
@@ -210,13 +202,38 @@ async function uploadAttendanceToServer() {
 
     const result = await res.json();
     alert(result.message || "Attendance uploaded!");
-    fetchCompanyData(); // Refresh table
+    fetchCompanyData();
+
+    document.getElementById("attendanceDate").value = '';
+    document.getElementById("dailyFile").value = '';
   });
 }
 
-// Render attendance table
+// ✅ Read Excel file
+function readExcel(file, callback) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    const headers = raw[0].map(h => h?.toString().trim());
+    const dataRows = raw.slice(1).map(row => {
+      let obj = {};
+      headers.forEach((h, i) => { if (h) obj[h] = row[i]; });
+      return obj;
+    });
+    callback(dataRows);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ✅ Render table (sorted by name)
 function renderTable() {
   if (masterData.length === 0) return;
+
+  masterData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   const allDates = new Set();
   masterData.forEach(row => {
@@ -226,7 +243,8 @@ function renderTable() {
   });
   const sortedDates = Array.from(allDates).sort();
 
-  let html = '<table><thead><tr>';
+  let html = `<h3 style="margin-top: 30px; color: #1d4ed8;">Company: ${selectedCompany}</h3>`;
+  html += '<table><thead><tr>';
   html += '<th>Name</th><th>Designation</th><th>Location</th>';
   sortedDates.forEach(date => html += `<th>${date}</th>`);
   html += '</tr></thead><tbody>';
@@ -247,21 +265,24 @@ function renderTable() {
   document.getElementById("tableContainer").innerHTML = html;
 }
 
-// Download as Excel
+// ✅ Download Excel sorted by name
 function downloadExcel() {
   if (masterData.length === 0) return alert("No data to download");
+
+  masterData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const yyyy = today.getFullYear();
-  const fileName = `Attendance-${selectedCompany}-${dd}-${mm}-${yyyy}.xlsx`;
+  const fileName = `Predictive-Analysis-Report-${selectedCompany}-${dd}-${mm}-${yyyy}.xlsx`;
 
   const rows = masterData.map(emp => {
     let obj = {
       Name: emp.name || emp.Name,
       Designation: emp.designation,
-      Location: emp.location
+      Location: emp.location,
+      Company: selectedCompany
     };
     Object.keys(emp).forEach(k => {
       if (/^\d{2}-\d{2}-\d{4}$/.test(k)) {
@@ -271,15 +292,75 @@ function downloadExcel() {
     return obj;
   });
 
-  const ws = XLSX.utils.json_to_sheet(rows);
+  const ws = XLSX.utils.json_to_sheet([]);
+  const title = `Predictive Analysis of ${selectedCompany}`;
+  XLSX.utils.sheet_add_aoa(ws, [[title]], { origin: "A1" });
+
+  const numCols = Object.keys(rows[0]).length;
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } }];
+  XLSX.utils.sheet_add_json(ws, rows, { origin: "A2", skipHeader: false });
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Attendance");
   XLSX.writeFile(wb, fileName);
 }
 
-// Load companies on startup
+// ✅ Download PDF sorted by name
+async function downloadPDF() {
+  if (masterData.length === 0) return alert("No data to export");
+
+  masterData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const title = `Predictive Analysis of ${selectedCompany}`;
+  doc.setFont('Helvetica');
+  doc.setFontSize(14);
+  doc.text(title, 105, 15, { align: 'center' });
+
+  const allDates = new Set();
+  masterData.forEach(row => {
+    Object.keys(row).forEach(key => {
+      if (/^\d{2}-\d{2}-\d{4}$/.test(key)) allDates.add(key);
+    });
+  });
+  const sortedDates = Array.from(allDates).sort();
+
+  const headers = [["Name", "Designation", "Location", ...sortedDates]];
+  const body = masterData.map(row => [
+    row.name || row.Name || "",
+    row.designation || "",
+    row.location || "",
+    ...sortedDates.map(date => row[date] === '✓' ? "✓" : "")
+  ]);
+
+  doc.autoTable({
+    head: headers,
+    body: body,
+    startY: 25,
+    styles: {
+      font: 'Helvetica',
+      fontSize: 9,
+      halign: 'center',
+      valign: 'middle'
+    },
+    headStyles: {
+      fillColor: [30, 64, 175],
+      textColor: 255
+    },
+    theme: 'striped'
+  });
+
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2, '0');
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const yyyy = today.getFullYear();
+
+  doc.save(`Predictive-Analysis-${selectedCompany}-${dd}-${mm}-${yyyy}.pdf`);
+}
+
 loadCompanies();
 </script>
-
 </body>
 </html>
