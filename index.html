@@ -191,7 +191,7 @@ async function uploadAttendanceToServer() {
     const todaySheet = todayData.map(row => ({
       name: row.Name?.trim() || "",
       designation: row.Designation || "",
-      location: row.Location || ""
+      location: row["Current Location"] || ""  // ✅ Fixed line
     })).filter(e => e.name);
 
     const res = await fetch(`${API_URL}/api/company/attendance/${selectedCompany}`, {
@@ -229,7 +229,7 @@ function readExcel(file, callback) {
   reader.readAsArrayBuffer(file);
 }
 
-// ✅ Render table (sorted by name)
+// ✅ Render table
 function renderTable() {
   if (masterData.length === 0) return;
 
@@ -265,7 +265,7 @@ function renderTable() {
   document.getElementById("tableContainer").innerHTML = html;
 }
 
-// ✅ Download Excel sorted by name
+// ✅ Download Excel
 function downloadExcel() {
   if (masterData.length === 0) return alert("No data to download");
 
@@ -305,7 +305,7 @@ function downloadExcel() {
   XLSX.writeFile(wb, fileName);
 }
 
-// ✅ Download PDF sorted by name
+// ✅ Download PDF
 async function downloadPDF() {
   if (masterData.length === 0) return alert("No data to export");
 
