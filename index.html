@@ -121,15 +121,14 @@
 </div>
 
 <script>
-const API_URL = 'https://iitg-predictive-analysis-report-1.onrender.com'; 
+const API_URL = 'https://lead-checker-iitgjobs-com-backend.onrender.com'; 
 let masterData = [], finalDate = "", selectedCompany = "";
 
-// ✅ Load companies in ascending order
 async function loadCompanies() {
   const res = await fetch(`${API_URL}/api/company`);
   const companies = await res.json();
 
-  companies.sort((a, b) => a.name.localeCompare(b.name)); // A–Z sort
+  companies.sort((a, b) => a.name.localeCompare(b.name)); 
 
   const dropdown = document.getElementById('companySelect');
   dropdown.innerHTML = '<option value="">-- Select Company --</option>';
@@ -138,7 +137,7 @@ async function loadCompanies() {
   });
 }
 
-// ✅ Add new company
+
 async function addCompany() {
   const name = document.getElementById('newCompanyInput').value.trim();
   if (!name) return alert("Please enter a company name.");
